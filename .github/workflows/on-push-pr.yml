@@ -4,6 +4,7 @@ on:
     tags: ["v*.*.*"]
   pull_request:
     types: [opened, reopened, synchronize]
+  workflow_dispatch:
 jobs:
   format-build-test:
     strategy:
