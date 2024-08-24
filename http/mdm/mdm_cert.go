@@ -3,6 +3,7 @@ package mdm
 import (
 	"context"
 	"crypto/x509"
+	"encoding/asn1"
 	"net/http"
 	"net/url"
 
@@ -17,6 +18,8 @@ import (
 type contextKeyCert struct{}
 
 var contextEnrollmentID struct{}
+
+var oidSubjectAlternativeName = asn1.ObjectIdentifier{2, 5, 29, 17}
 
 // CertExtractPEMHeaderMiddleware extracts the MDM enrollment identity
 // certificate from the request into the HTTP request context. It looks
@@ -146,6 +149,26 @@ func CertExtractMdmSignatureMiddleware(next http.Handler, opts ...SigLogOption) 
 // from the HTTP request context.
 func GetCert(ctx context.Context) *x509.Certificate {
 	cert, _ := ctx.Value(contextKeyCert{}).(*x509.Certificate)
+
+	// Copied from smallstep/certificates (Apache License 2.0)
+	// <https://github.com/smallstep/certificates/blob/442be8da1cd97336b3636f1a134823f7181c172b/acme/challenge.go#L1024-L1033>
+	//
+	// Certificates issued via step-ca with the device-attest-01 challenge contain
+	// a SAN marked as critical that is not supported by crypto/x509:
+	//
+	// X509v3 Subject Alternative Name: critical
+	//     Permanent Identifier: XXXXXXXXXX
+	if cert != nil && len(cert.UnhandledCriticalExtensions) > 0 {
+		unhandledCriticalExtensions := cert.UnhandledCriticalExtensions[:0]
+		for _, extOID := range cert.UnhandledCriticalExtensions {
+			if !extOID.Equal(oidSubjectAlternativeName) {
+				// critical extensions other than the Subject Alternative Name remain unhandled
+				unhandledCriticalExtensions = append(unhandledCriticalExtensions, extOID)
+			}
+		}
+		cert.UnhandledCriticalExtensions = unhandledCriticalExtensions
+	}
+
 	return cert
 }
 
